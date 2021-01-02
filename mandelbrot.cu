@@ -10,7 +10,7 @@
  * The percision is the real and imaginary step size in that order
  */
 __global__ 
-void mandelbrot(unsigned int* image, 
+void mandelbrot(unsigned char* image, 
     const double left, 
     const double right, 
     const double down, 
@@ -33,13 +33,10 @@ void mandelbrot(unsigned int* image,
         double r = left + real_precision*x;
         double t = down + im_precision*y;
 
-        // start from z=0
-        double zr = 0.0;
-        double zt = 0.0;
-        // temporary variables
-        double _zr, _zt;
+        // start from z=0 and declare temporary variables
+        double zr = 0.0, zt = 0.0, _zr, _zt;
 
-        for (int iteration = 0; iteration < iterations-1; ++iteration)
+        for (int iteration = 1; iteration < iterations; ++iteration)
         {
             // perform an iteration of z^2+c
             _zr = zr*zr - zt*zt + r;
@@ -49,51 +46,60 @@ void mandelbrot(unsigned int* image,
             // check for |z|>2 (or |z|^2>4)
             if (zr*zr+zt*zt > 4.0)
             {
-                // convert to image. here, a linear gamma curve is used
-                image[x+y*re_size] = iteration;
+                // convert to image using a log distribution.
+                int q = (int)((sqrtf(iteration)*512)/sqrtf(iterations));
+                int s = 3*(x+y*re_size); // s:red, s+1:green, s+2:blue
+                if (q < 256)
+                {
+                    image[s+2] = 255-q;
+                    image[s] = q;
+                }
+                else
+                {
+                    image[s] = 511-q;
+                    image[s+1] = q-256;
+                }                
                 return;
             }
         }
-        image[x+y*re_size] = iterations-1;
+        // If it never reaches |z|>2, the point is then in the mandobrot set given the program.
+        // Therefore, the point is represented in the image as black
     }
 }
 
-int check(double r, double t, int iterations)
-{
-    double zr = 0.0;
-    double zt = 0.0;
-    double _zr, _zt;
-    for (int iteration = 0; iteration < iterations-1; ++iteration)
-    {
-        // perform an iteration of z^2+c
-        _zr = zr*zr - zt*zt + r;
-        _zt = zr*zt*2 + t;
-        zr = _zr;
-        zt = _zt;
-        printf("%.2f+%.2fi\n", zr, zt);
+// int check(double r, double t, int iterations)
+// {
+//     double zr = 0.0, zt = 0.0, _zr, _zt;
+//     for (int iteration = 0; iteration < iterations-1; ++iteration)
+//     {
+//         // perform an iteration of z^2+c
+//         _zr = zr*zr - zt*zt + r;
+//         _zt = zr*zt*2 + t;
+//         zr = _zr;
+//         zt = _zt;
 
-        // check for |z|>2 (or |z|^2>4)
-        if (zr*zr+zt*zt > 4.0)
-        {
-            // convert to image. here, a linear gamma curve is used
-            return iteration;
-        }
-    }
-    return iterations-1;
-}
+//         // check for |z|>2 (or |z|^2>4)
+//         if (zr*zr+zt*zt > 4.0)
+//         {
+//             // convert to image. here, a linear gamma curve is used
+//             return iteration;
+//         }
+//     }
+//     return iterations-1;
+// }
 
 int main(int argc, char* argv[])
 {
     // the default bounds for the mandelbrot set is usually -2<Re(z)<1 and -1<Im(z)<1
-    double bounds[4] = {-2.0, 1.0, -1.0, 1.0};
+    double bounds[4] = {-0.235125-4e-5, -0.235125+12e-5, 0.827215-4e-5, 0.827215+7.5e-5};
     
     // given precision of 0.001, it will generate 3000x2000 image which is about 6 megapixel
-    double precision[2] = {0.001, 0.001};
+    double precision[2] = {1e-8, 1e-8};
     
-    // i feel like making iterate 256 times
-    int iterations = 256;
+    // this just fits the 3 8-bit channels
+    int iterations = 1 << 11;
 
-    unsigned int *d_image, *h_image;
+    unsigned char *d_image, *h_image;
     int re_size, im_size;
     
     // compute the size of the image
@@ -101,14 +107,14 @@ int main(int argc, char* argv[])
     im_size = (int)((bounds[3]-bounds[2])/precision[1]);
     
     // allocate the GPU memory for the image
-    if (cudaMalloc(&d_image, re_size*im_size*sizeof(int)) != cudaSuccess) 
+    if (cudaMalloc(&d_image, 3*re_size*im_size*sizeof(char)) != cudaSuccess) 
     {
         std::cout << "The device does not have enough memory. Program exited with error code -1." << std::endl;
         return -1;
     }
 
     // set the memory to 0
-    if (cudaMemset(d_image, 0, re_size*im_size*sizeof(int)) != cudaSuccess)
+    if (cudaMemset(d_image, 0, 3*re_size*im_size*sizeof(char)) != cudaSuccess)
     {
         std::cout << "Failed to set memory to 0. Program exited with error code -2." << std::endl;
         return -2;
@@ -120,38 +126,35 @@ int main(int argc, char* argv[])
     mandelbrot <<<grid, block>>> (d_image, bounds[0], bounds[1], bounds[2], bounds[3], iterations, precision[0], precision[1]);
     cudaDeviceSynchronize();
 
-    h_image = (unsigned int*)calloc(re_size*im_size, sizeof(int));
-    cudaMemcpy(h_image, d_image, re_size*im_size*sizeof(int), cudaMemcpyDeviceToHost);
+    h_image = (unsigned char*)calloc(3*re_size*im_size, sizeof(char));
+    if (cudaMemcpy(h_image, d_image, 3*re_size*im_size*sizeof(char), cudaMemcpyDeviceToHost) != cudaSuccess)
+    {
+        std::cout << "Failed to copy the memory from device to host. Program exited with error code -9";
+        return -9;
+    }
     cudaFree(d_image);
 
-    std::cout << h_image[2000+1000*re_size] << std::endl;
-
     // check against CPU code
-    srand(time(NULL));
-    for (int i = 0; i < 1; ++i)
-    {
-        int x = rand() % re_size;
-        int y = rand() % im_size;
+    // srand(time(NULL));
+    // for (int i = 0; i < 20; ++i)
+    // {
+    //     int x = rand() % re_size;
+    //     int y = rand() % im_size;
 
-        printf("z=%.2f+%.2fi GPU:%d CPU:%d\n", bounds[0]+(double)x*precision[0], bounds[2]+(double)y*precision[1], h_image[x+y*re_size], check(bounds[0]+(double)x*precision[0], bounds[2]+(double)y*precision[1], iterations));
-    }
+    //     printf("z=%.2f+%.2fi GPU:%d CPU:%d\n", bounds[0]+(double)x*precision[0], bounds[2]+(double)y*precision[1], h_image[3*(x+y*re_size)], check(bounds[0]+(double)x*precision[0], bounds[2]+(double)y*precision[1], iterations));
+    // }
 
     // write the image
-    std::ofstream img ("mandelbrot.ppm");
-    img << "P3" << std::endl;
-    img << re_size << " " << im_size << std::endl;
-    img << iterations-1 << std::endl;
-    for (int y = 0; y < im_size; ++y)
-    {
-        for (int x = 0; x < re_size; ++x)
-        {
-            img << h_image[x+y*re_size] << " " << h_image[x+y*re_size] << " " << h_image[x+y*re_size] << std::endl;
-        }
-    }
-
-
+    FILE *img;
+    if (argc > 1)
+        img = fopen(argv[1], "wb");
+    else
+        img = fopen("/mnt/ramdisk/image.ppm", "wb");
+    fprintf(img, "P6\n%d %d\n%d\n", re_size, im_size, 255);
+    fwrite(h_image, sizeof(char), 3*re_size*im_size, img);
+    fclose(img);
+    
     free(h_image);
-
 
     return 0;
 }
