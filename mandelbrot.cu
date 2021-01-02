@@ -1,4 +1,7 @@
 #include <iostream>
+#include <fstream>
+#include <stdlib.h>
+#include <time.h>
 
 /* Generates a mandelbrot set image
  *
@@ -7,7 +10,7 @@
  * The percision is the real and imaginary step size in that order
  */
 __global__ 
-void mandelbrot(int* image, 
+void mandelbrot(unsigned int* image, 
     const double left, 
     const double right, 
     const double down, 
@@ -33,13 +36,16 @@ void mandelbrot(int* image,
         // start from z=0
         double zr = 0.0;
         double zt = 0.0;
+        // temporary variables
+        double _zr, _zt;
 
         for (int iteration = 0; iteration < iterations-1; ++iteration)
         {
             // perform an iteration of z^2+c
-            zr = zr*zr - zt*zt + r;
-            zt = zr*zt*2 + t;
-
+            _zr = zr*zr - zt*zt + r;
+            _zt = zr*zt*2 + t;
+            zr = _zr;
+            zt = _zt;
             // check for |z|>2 (or |z|^2>4)
             if (zr*zr+zt*zt > 4.0)
             {
@@ -50,6 +56,30 @@ void mandelbrot(int* image,
         }
         image[x+y*re_size] = iterations-1;
     }
+}
+
+int check(double r, double t, int iterations)
+{
+    double zr = 0.0;
+    double zt = 0.0;
+    double _zr, _zt;
+    for (int iteration = 0; iteration < iterations-1; ++iteration)
+    {
+        // perform an iteration of z^2+c
+        _zr = zr*zr - zt*zt + r;
+        _zt = zr*zt*2 + t;
+        zr = _zr;
+        zt = _zt;
+        printf("%.2f+%.2fi\n", zr, zt);
+
+        // check for |z|>2 (or |z|^2>4)
+        if (zr*zr+zt*zt > 4.0)
+        {
+            // convert to image. here, a linear gamma curve is used
+            return iteration;
+        }
+    }
+    return iterations-1;
 }
 
 int main(int argc, char* argv[])
@@ -63,7 +93,7 @@ int main(int argc, char* argv[])
     // i feel like making iterate 256 times
     int iterations = 256;
 
-    int *d_image, *h_image;
+    unsigned int *d_image, *h_image;
     int re_size, im_size;
     
     // compute the size of the image
@@ -90,10 +120,38 @@ int main(int argc, char* argv[])
     mandelbrot <<<grid, block>>> (d_image, bounds[0], bounds[1], bounds[2], bounds[3], iterations, precision[0], precision[1]);
     cudaDeviceSynchronize();
 
-    h_image = (int*)calloc(re_size*im_size, sizeof(int));
+    h_image = (unsigned int*)calloc(re_size*im_size, sizeof(int));
     cudaMemcpy(h_image, d_image, re_size*im_size*sizeof(int), cudaMemcpyDeviceToHost);
+    cudaFree(d_image);
 
-    std::cout << h_image[0+0*re_size] << std::endl;
-    
+    std::cout << h_image[2000+1000*re_size] << std::endl;
+
+    // check against CPU code
+    srand(time(NULL));
+    for (int i = 0; i < 1; ++i)
+    {
+        int x = rand() % re_size;
+        int y = rand() % im_size;
+
+        printf("z=%.2f+%.2fi GPU:%d CPU:%d\n", bounds[0]+(double)x*precision[0], bounds[2]+(double)y*precision[1], h_image[x+y*re_size], check(bounds[0]+(double)x*precision[0], bounds[2]+(double)y*precision[1], iterations));
+    }
+
+    // write the image
+    std::ofstream img ("mandelbrot.ppm");
+    img << "P3" << std::endl;
+    img << re_size << " " << im_size << std::endl;
+    img << iterations-1 << std::endl;
+    for (int y = 0; y < im_size; ++y)
+    {
+        for (int x = 0; x < re_size; ++x)
+        {
+            img << h_image[x+y*re_size] << " " << h_image[x+y*re_size] << " " << h_image[x+y*re_size] << std::endl;
+        }
+    }
+
+
+    free(h_image);
+
+
     return 0;
 }
