@@ -62,7 +62,7 @@ void mandelbrot(unsigned char* image,
                 return;
             }
         }
-        // If it never reaches |z|>2, the point is then in the mandobrot set given the program.
+        // If it never reaches |z|>2, the point is then in the mandobrot set given the limitations of the program.
         // Therefore, the point is represented in the image as black
     }
 }

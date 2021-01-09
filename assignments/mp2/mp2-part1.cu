@@ -143,6 +143,41 @@ __global__ void initialize(T *array,T value, unsigned int array_length)
   }
 }
 
+__device__ unsigned int d_bin_index(float3 particle, int3 gridding) 
+{
+  unsigned int x_index = (unsigned int)(particle.x * (1 << gridding.x));
+  unsigned int y_index = (unsigned int)(particle.y * (1 << gridding.y));
+  unsigned int z_index = (unsigned int)(particle.z * (1 << gridding.z));
+  unsigned int index = 0;
+  index |= z_index;
+  index <<= gridding.y;
+  index |= y_index;
+  index <<= gridding.x;
+  index |=  x_index;
+
+  return index;
+}
+
+__global__ 
+void binning(float3 *particles, int *bins, int *bin_counters, int *overflow_flag, int3 gridding, int bin_size, int array_length)
+{
+  int i = threadIdx.x + blockDim.x * blockIdx.x;
+  if (i < array_length)
+  {
+    unsigned int bin = d_bin_index(particles[i],binning);
+    if (bin_counters[bin] < bin_size)
+    {
+      unsigned int offset = bin_counters[bin];
+      atomicInc(&bin_counters[bin], bin_size);
+      bins[bin*bin_size + offset] = i;
+    }
+    else
+    {
+      *overflow_flag = true;
+    }
+  }
+}
+
 void device_binning(float3 * h_particles, int * h_bins, int * h_bin_counters, int3 gridding, int num_particles, int num_bins, int bin_size)
 {
   // TODO: your implementation here
@@ -152,7 +187,28 @@ void device_binning(float3 * h_particles, int * h_bins, int * h_bin_counters, in
 	// int value = 0;
 	// int array_length = 0;
 	// initialize<<<griddim,blockdim>>>(array, value, array_length);
-	// The compiler will figure out the types of your arguments and codegen a implementation for each type you use.
+  // The compiler will figure out the types of your arguments and codegen a implementation for each type you use.
+  float3 *d_particles;
+  int *d_bins, *d_bin_counters;
+  
+  cudaMalloc((void**)&d_particles, num_particles*sizeof(float3));
+  cudaMalloc((void**)&d_bins, num_bins*bin_size*sizeof(int));
+  cudaMalloc((void**)&d_bin_counters, num_bins*sizeof(int));
+
+  cudaMemcpy(d_particles, h_particles, num_particles*sizeof(float3), cudaMemcpyHostToDevice);
+  cudaMemcpy(d_bins, h_bins, num_bins*bin_size*sizeof(int), cudaMemcpyHostToDevice);
+  cudaMemcpy(d_bin_counters, h_bin_counters, num_bins*sizeof(int), cudaMemcpyHostToDevice);
+
+  binning <<<(num_particles+1023)/1024, 1024>>> (d_particles, d_bins, d_bin_counters, overflow_flag, gridding, bin_size, array_length);
+
+  cudaMemcpy(h_bins, d_bins, num_bins*bin_size*sizeof(int), cudaMemcpyDeviceToHost);
+  cudaMemcpy(h_bin_counters, d_bin_counters, num_bins*sizeof(int), cudaMemcpyDeviceToHost);
+
+  cudaFree(d_bins);
+  cudaFree(d_bin_counters);
+  cudaFree(d_particles);
+
+  
 
 }
 

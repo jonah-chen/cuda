@@ -121,6 +121,18 @@ void matmul2(float* h_a, float* h_b, float* h_ans, const int m, const int n, con
     cudaFree(d_ans);
 }
 
+__global__
+void add(float* a, float* ans)
+{
+    int b = blockIdx.x * blockDim.x;
+
+    __shared__ float partial_ans[1024];
+    {
+        a[b+threadIdx.x]
+    }
+}
+
+
 int main(int argc, char* argv[])
 {
     float *h_a, *h_b, *h_ans1, *h_ans2;
