@@ -143,7 +143,8 @@ __global__ void initialize(T *array,T value, unsigned int array_length)
   }
 }
 
-__device__ unsigned int d_bin_index(float3 particle, int3 gridding) 
+__device__ 
+unsigned int d_bin_index(float3 particle, int3 gridding) 
 {
   unsigned int x_index = (unsigned int)(particle.x * (1 << gridding.x));
   unsigned int y_index = (unsigned int)(particle.y * (1 << gridding.y));
@@ -207,9 +208,6 @@ void device_binning(float3 * h_particles, int * h_bins, int * h_bin_counters, in
   cudaFree(d_bins);
   cudaFree(d_bin_counters);
   cudaFree(d_particles);
-
-  
-
 }
 
 int main(void)

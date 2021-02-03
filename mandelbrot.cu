@@ -67,26 +67,26 @@ void mandelbrot(unsigned char* image,
     }
 }
 
-// int check(double r, double t, int iterations)
-// {
-//     double zr = 0.0, zt = 0.0, _zr, _zt;
-//     for (int iteration = 0; iteration < iterations-1; ++iteration)
-//     {
-//         // perform an iteration of z^2+c
-//         _zr = zr*zr - zt*zt + r;
-//         _zt = zr*zt*2 + t;
-//         zr = _zr;
-//         zt = _zt;
+int check(double r, double t, int iterations)
+{
+    double zr = 0.0, zt = 0.0, _zr, _zt;
+    for (int iteration = 0; iteration < iterations-1; ++iteration)
+    {
+        // perform an iteration of z^2+c
+        _zr = zr*zr - zt*zt + r;
+        _zt = zr*zt*2 + t;
+        zr = _zr;
+        zt = _zt;
 
-//         // check for |z|>2 (or |z|^2>4)
-//         if (zr*zr+zt*zt > 4.0)
-//         {
-//             // convert to image. here, a linear gamma curve is used
-//             return iteration;
-//         }
-//     }
-//     return iterations-1;
-// }
+        // check for |z|>2 (or |z|^2>4)
+        if (zr*zr+zt*zt > 4.0)
+        {
+            // convert to image. here, a linear gamma curve is used
+            return iteration;
+        }
+    }
+    return iterations-1;
+}
 
 int main(int argc, char* argv[])
 {
@@ -134,15 +134,17 @@ int main(int argc, char* argv[])
     }
     cudaFree(d_image);
 
+    #ifdef DEBUG
     // check against CPU code
-    // srand(time(NULL));
-    // for (int i = 0; i < 20; ++i)
-    // {
-    //     int x = rand() % re_size;
-    //     int y = rand() % im_size;
+    srand(time(NULL));
+    for (int i = 0; i < 20; ++i)
+    {
+        int x = rand() % re_size;
+        int y = rand() % im_size;
 
-    //     printf("z=%.2f+%.2fi GPU:%d CPU:%d\n", bounds[0]+(double)x*precision[0], bounds[2]+(double)y*precision[1], h_image[3*(x+y*re_size)], check(bounds[0]+(double)x*precision[0], bounds[2]+(double)y*precision[1], iterations));
-    // }
+        printf("z=%.2f+%.2fi GPU:%d CPU:%d\n", bounds[0]+(double)x*precision[0], bounds[2]+(double)y*precision[1], h_image[3*(x+y*re_size)], check(bounds[0]+(double)x*precision[0], bounds[2]+(double)y*precision[1], iterations));
+    }
+    #endif
 
     // write the image
     FILE *img;
